@@ -120,6 +120,7 @@ b32 mkpath(const char *path_)
 b32 rmdir_f(const char *path)
 {
 	b32 success = false;
+/*
 	tinydir_dir dir;
 	if (tinydir_open(&dir, path) == -1) {
 		log_error("rmdir: error reading directory '%s'", path);
@@ -152,6 +153,7 @@ b32 rmdir_f(const char *path)
 		success = true;
 out:
 	tinydir_close(&dir);
+*/
 	return success;
 }
 #endif // VLT_USE_TINYDIR
@@ -202,7 +204,7 @@ char *imlogpath(const char *resource)
 
 char *imcachedir(void)
 {
-	return imapppath(".cache");
+	return imapppath("data/cache");
 }
 
 char *imcachepath(const char *resource)
@@ -212,7 +214,7 @@ char *imcachepath(const char *resource)
 
 char *imdatadir(void)
 {
-	return imapppath(".data");
+	return imapppath("data");
 }
 
 char *imdatapath(const char *resource)

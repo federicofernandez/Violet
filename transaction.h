@@ -84,6 +84,7 @@ void *store_data(u32 kind)
 
 transaction_system_t transaction_system_create(transaction_logger_t *logger, allocator_t *alc)
 {
+	log_warn("Calling transaction_system_create");
 	return (transaction_system_t) {
 		.alc = alc,
 		.stores          = array_create_ex(alc),
@@ -558,6 +559,7 @@ u32 transaction__handle_ordinary_event(transaction_system_t *sys, event_t *event
 
 	event_t *last_event = transaction__last_event(sys);
 	b32 mergeable = transaction__events_mergeable(event, last_event);
+	array__head *head = array__get_head(sys->event_history);
 
 	if (event->meta->contract->update_pre)
 		mergeable &= event_update_pre(event, mergeable ? last_event : NULL);

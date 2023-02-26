@@ -143,6 +143,9 @@ ARRDEF void *array__reserve(void *array, array_size_t nmemb, size_t sz
 {
 	array__head *head = array__get_head(array);
 	if (nmemb > head->cap) {
+		// log_warn("array: %p", array);
+		// log_warn("head->allocator: %p", head->allocator);
+		// log_warn("head->allocator realloc_: %p", head->allocator->realloc_);
 		head = head->allocator->realloc_(head, sizeof(array__head) + nmemb * sz,
 		                                 head->allocator  MEMCALL_VARS);
 		if (!head) { fatal("array__reserve: oom"); return NULL; }

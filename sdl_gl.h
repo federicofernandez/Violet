@@ -142,7 +142,6 @@ typedef enum window_flags
 } window_flags_e;
 
 typedef struct window window_t;
-typedef void (*window_endsession_callback_t)(void);
 
 window_t *window_create(s32 x, s32 y, s32 w, s32 h, const char *title,
                         window_flags_e flags);
@@ -162,8 +161,6 @@ void   window_restore(window_t *window);
 void   window_fullscreen(window_t *window);
 void   window_set_title(window_t *window, const char *title);
 void   window_run(window_t *window, u32 fps, b32(*ufunc)(window_t*, void*), void *udata);
-void   window_set_endsession_callback(window_t* window,
-                                      window_endsession_callback_t endsession_callback);
 
 gui_t *window_get_gui(window_t *window);
 const gui_img_t *window_get_img(window_t *window, const char *fname);
@@ -180,12 +177,10 @@ void   mouse_pos_global(const window_t *window, s32 *x, s32 *y);
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_surface.h>
-#ifdef _WIN32
-#include <SDL2/SDL_syswm.h>
-#endif
 #define STB_IMAGE_IMPLEMENTATION
 // #define STB_IMAGE_STATIC
 #include "stbi.h"
+#include <stdlib.h>
 #define STB_RECT_PACK_IMPLEMENTATION
 // #define STBRP_STATIC
 #include "stb_rect_pack.h"
@@ -1486,63 +1481,6 @@ SDL_HitTestResult window__hit_test(SDL_Window *window, const SDL_Point *point, v
 	return SDL_HITTEST_NORMAL;
 }
 
-#ifdef _WIN32
-window_endsession_callback_t g_endsession_callback = NULL;
-WNDPROC g_sdl_wndproc = NULL;
-
-static
-LRESULT CALLBACK wndproc_hook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-	if (msg == WM_QUERYENDSESSION) {
-		// Returning FALSE blocks shutdown/restart until the application closes or the user manually
-		// overrides and picks "Restart/Shutdown Anyway".
-		// Posting the WM_CLOSE message triggers the usual quitting logic; if the user doesn't have
-		// unsaved work, the application will close normally, this message will never be seen and shutdown
-		// will proceed cleanly.
-		PostMessage(hwnd, WM_CLOSE, 0, 0);
-		return FALSE;
-	}
-
-	// The system is shutting down immediately after we return from this function; we _must_ perform
-	// any cleanup now.
-	// Note that if wParam is FALSE, this message is a no-op informing us that shutdown was canceled
-	// due to WM_QUERYENDSESSION returning FALSE in an open application.
-	if (msg == WM_ENDSESSION && wParam) {
-		if (g_endsession_callback)
-			g_endsession_callback();
-		// Windows will kill us at some unpredictable point in immediate future - seems safest to exit
-		// here rather than continue to run in partially shutdown state.
-		exit(0);
-	}
-
-	return g_sdl_wndproc(hwnd, msg, wParam, lParam);
-}
-
-void window_set_endsession_callback(window_t* window, window_endsession_callback_t endsession_callback)
-{
-	if (g_sdl_wndproc != NULL || g_endsession_callback != NULL) {
-		ASSERT_FALSE_AND_LOG("should only be called once and only for main window");
-		return;
-	}
-
-	g_endsession_callback = endsession_callback;
-
-	// When a Windows user restarts or shuts down their computer, the application does not
-	// receive WM_CLOSE, WM_QUIT, WM_DESTROY messages. Instead it receives WM_QUERYENDSESSION
-	// followed by WM_ENDSESSION, neither of which is handled by SDL. They can be propagated
-	// by enabling SysWM events, but they come too late via polling and without the opportunity
-	// to change the return value via event watching, so the only option for proper handling is
-	// to man-in-the-middle WndProc.
-	// If these events are not handled, every reboot/shutdown with the application open is
-	// effectively a hard crash.
-	SDL_SysWMinfo wm_info;
-	SDL_VERSION(&wm_info.version);
-	SDL_GetWindowWMInfo(window->window, &wm_info);
-	g_sdl_wndproc = (WNDPROC) GetWindowLongPtr(wm_info.info.win.window, GWLP_WNDPROC);
-	SetWindowLongPtr(wm_info.info.win.window, GWLP_WNDPROC, (LONG_PTR) wndproc_hook);
-}
-#endif
-
 window_t *window_create(s32 x, s32 y, s32 w, s32 h, const char *title,
                         window_flags_e flags)
 {
@@ -1559,7 +1497,6 @@ window_t *window_create_ex(s32 x, s32 y, s32 w, s32 h, const char *title,
 		// no longer interact with the Windows window manager by default.
 		// This hint restores features like snapping.
 		SDL_SetHint("SDL_BORDERLESS_RESIZABLE_STYLE", "true");
-		SDL_SetHint("SDL_BORDERLESS_WINDOWED_STYLE", "true");
 		if (SDL_Init(SDL_INIT_VIDEO) < 0) {
 			log_error("SDL_Init(VIDEO) failed: %s", SDL_GetError());
 			goto err_sdl;
@@ -1680,12 +1617,12 @@ window_t *window_create_ex(s32 x, s32 y, s32 w, s32 h, const char *title,
 		log_warn("SDL_GL_SetSwapInterval(%i) failed: %s", vsync, SDL_GetError());
 #endif
 
-	glewExperimental = GL_TRUE;
-	GLenum glew_err = glewInit();
-	if (glew_err != GLEW_OK) {
-		log_error("glewInit error: %s", glewGetErrorString(glew_err));
-		goto err_glew;
-	}
+	//glewExperimental = GL_TRUE;
+	//GLenum glew_err = glewInit();
+	//if (glew_err != GLEW_OK) {
+		//log_error("glewInit error: %s", glewGetErrorString(glew_err));
+		//goto err_glew;
+	//}
 
 	glGetError(); /* clear error flag */
 
@@ -2047,7 +1984,7 @@ void window_end_frame(window_t *window)
 	 * which could be 'solved' by placing the dragged icon on a separate layer. */
 	for (u32 i = 0; i < output.num_layers; ++i) {
 		const gui_layer_t *layer = &output.layers[i];
-		GL_CHECK(glScissor, layer->x, layer->y, layer->w, layer->h);
+		GL_CHECK(glScissor, layer->x, layer->y, layer->w, abs(layer->h));
 		for (u32 j = 0; j < layer->draw_call_cnt; ++j) {
 			const gui_draw_call_t *draw_call = &output.draw_calls[layer->draw_call_idx+j];
 			if (draw_call->tex != current_texture) {
@@ -2106,10 +2043,10 @@ void window_end_frame_ex(window_t *window, u32 target_frame_milli,
 	frame_milli = timepoint_diff_milli(gui_frame_start(gui), timepoint_create());
 
 	if (target_frame_milli && frame_milli > target_frame_milli)
-		log_warn("long frame: %ums", frame_milli);
 	else if (  timepoint_diff_milli(gui_last_input_time(gui), gui_frame_start(gui))
-	         > idle_start_milli)
+	         > idle_start_milli) {
 		SDL_WaitEventTimeout(NULL, idle_frame_milli - frame_milli);
+	}
 	else if (target_frame_milli)
 		time_sleep_milli(target_frame_milli - frame_milli);
 }

@@ -137,7 +137,6 @@ typedef enum vlt_thread_type
 } vlt_thread_type_e;
 
 void vlt_init(vlt_thread_type_e thread_type);
-b32  vlt_is_init(void);
 void vlt_destroy(vlt_thread_type_e thread_type);
 
 /* Error handling */
@@ -422,17 +421,8 @@ void log_level_writev(log_level_e level, const char *format, va_list ap);
 #define log_assert(fmt, ...) log_level_write(LOG_ASSERT, fmt, ##__VA_ARGS__)
 #define log_write(fmt, ...) log_level_write(LOG_INFO,    fmt, ##__VA_ARGS__)
 
-#define LOG_ASSERT_ONCE_(has_logged_once, fmt, ...) do { \
-		static b32 has_logged_once = false; \
-		if (!has_logged_once) { \
-			log_assert(LOCATION " " fmt, ##__VA_ARGS__); \
-			has_logged_once = true; \
-		} \
-	} while (0)
-#define ASSERT_FALSE_AND_LOG(fmt, ...) do { \
-	assert(false); \
-	LOG_ASSERT_ONCE_(CONCAT(__has_logged_once, __COUNTER__), fmt, ##__VA_ARGS__); \
-} while (0)
+#define ASSERT_FALSE_AND_LOG(fmt, ...) \
+	do { assert(false); log_assert(LOCATION " " fmt, ##__VA_ARGS__); } while(0)
 
 void file_logger(void *udata, log_level_e level, const char *format, va_list ap);
 #if defined(_WIN32)
@@ -1316,6 +1306,7 @@ u32 g_log_stream_cnt = 0;
 
 void log_add_stream(log_level_e level, logger_t logger, void *udata)
 {
+/*
 	if (g_log_stream_cnt >= LOG_STREAM_CAP) {
 		ASSERT_FALSE_AND_LOG("attempting to add too many loggers");
 		return;
@@ -1324,10 +1315,12 @@ void log_add_stream(log_level_e level, logger_t logger, void *udata)
 	g_log_streams[g_log_stream_cnt].level = level;
 	g_log_streams[g_log_stream_cnt].udata = udata;
 	++g_log_stream_cnt;
+*/
 }
 
 void log_remove_stream(logger_t logger, const void *udata)
 {
+/*
 	for (u32 i = 0; i < g_log_stream_cnt; ++i) {
 		if (logger == g_log_streams[i].logger && udata == g_log_streams[i].udata) {
 			g_log_streams[i] = g_log_streams[g_log_stream_cnt-1];
@@ -1336,6 +1329,7 @@ void log_remove_stream(logger_t logger, const void *udata)
 		}
 	}
 	ASSERT_FALSE_AND_LOG("targeting invalid logger or logger with mismatched udata");
+*/
 }
 
 void log_set_stream_level(logger_t logger, const void *udata, log_level_e level)
@@ -1351,14 +1345,20 @@ void log_set_stream_level(logger_t logger, const void *udata, log_level_e level)
 
 void log_level_write(log_level_e level, const char *format, ...)
 {
-	for (u32 i = 0; i < g_log_stream_cnt; ++i) {
-		if (level & g_log_streams[i].level) {
+	// for (u32 i = 0; i < g_log_stream_cnt; ++i) {
+		// if (level & g_log_streams[i].level) {
 			va_list ap;
 			va_start(ap, format);
-			g_log_streams[i].logger(g_log_streams[i].udata, level, format, ap);
+			// g_log_streams[i].logger(g_log_streams[i].udata, level, format, ap);
+
+			fprintf(stderr, "[%d] ", level);
+    			vfprintf(stderr, format, ap);
+			fprintf(stderr, "\n");
+			fflush(stderr);
+
 			va_end(ap);
-		}
-	}
+		// }
+	// }
 }
 
 void log_level_writev(log_level_e level, const char *format, va_list ap)
@@ -1441,11 +1441,6 @@ void vlt_init(vlt_thread_type_e thread_type)
 #if defined(_WIN32) && defined(DEBUG_HEAP)
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_CHECK_ALWAYS_DF);
 #endif
-}
-
-b32 vlt_is_init(void)
-{
-	return g_temp_allocator != NULL;
 }
 
 void vlt_destroy(vlt_thread_type_e thread_type)

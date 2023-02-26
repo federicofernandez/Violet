@@ -999,6 +999,7 @@ gui_element_style_t gui_element_style(const gui_t *gui,
 #endif
 
 void gui_style_push_(gui_t *gui, const void *value, size_t offset, size_t size);
+u32 gui_style_stack_sz(gui_t *gui);
 void gui_style_push_current_(gui_t *gui, size_t offset, size_t size);
 void gui_style_push_color_(gui_t *gui, size_t offset, color_t val);
 void gui_style_push_b32_(gui_t *gui, size_t offset, b32 val);
@@ -2271,7 +2272,7 @@ void gui__warn_not_drawn(u64 id, const char *type)
 	s32 x, y;
 	u32 base_id;
 	gui__decompose_widget_id(id, &x, &y, &base_id);
-	log_warn("%s widget [%d,%d] on layer %u was not drawn", type, x, y, base_id);
+	log_warn("%s widget [%d,%d] on layer %u NOT DRAAWN!!", type, x, y, base_id);
 }
 
 void gui_events_end(gui_t *gui)
@@ -2326,6 +2327,8 @@ void gui_events_end(gui_t *gui)
 	gui->lock = 0;
 
 	/* Should rarely hit these */
+	// @ff: debug
+	// log_warn("EV :: gui->hot_id: %d. hot_id_found_this_frame: %d", gui->hot_id, gui -> hot_id_found_this_frame  ? 1 : 0);
 	if (gui->hot_id != 0 && !gui->hot_id_found_this_frame) {
 		gui__warn_not_drawn(gui->hot_id, "hot");
 		gui->hot_id = 0;
@@ -4190,7 +4193,7 @@ b32 gui__widget_contains_mouse(const gui_t *gui, s32 x, s32 y, s32 w, s32 h)
 	box2i box;
 	box2i_from_dims(&box, x, y+h, x+w, y);
 	return box2i_contains_point(box, gui->mouse_pos)
-	    && gui_point_visible(gui, x, y)
+	    && gui__box_half_visible(gui, box)
 	    && !gui->lock
 	    && !mouse_covered(gui);
 }
@@ -8273,10 +8276,7 @@ void pgui__panel_titlebar(gui_t *gui, gui_panel_t *panel, b32 *dragging)
 	y = panel->y + panel->h - dim;
 
 	if (panel->flags & GUI_PANEL_DRAGGABLE) {
-		/* We want to make the whole titlebar grabbable for dragging,
-		   except for any collapsing or closing buttons. */
-		const s32 drag_w = panel->w - rw;
-		const b32 contains_mouse = gui__widget_contains_mouse(gui, panel->x, y, drag_w, dim);
+		const b32 contains_mouse = gui__widget_contains_mouse(gui, panel->x, y, dim, dim);
 		*dragging = gui_drag(gui, &panel->x, &y, contains_mouse, MB_LEFT);
 		if (*dragging) {
 			panel->y = y - panel->h + dim;
@@ -8295,6 +8295,10 @@ void pgui__panel_titlebar(gui_t *gui, gui_panel_t *panel, b32 *dragging)
 	gui_rect(gui, panel->x, y, panel->w,
 	         dim, gui->style.panel.titlebar.bg_color,
 	         gui->style.panel.titlebar.outline_color);
+
+	gui_style_push(gui, drag, gui->style.panel.drag);
+	gui__drag_rect_render(gui, panel->x, y, dim, dim, *dragging);
+	gui_style_pop(gui);
 
 	if (tab_count > 1) {
 		const s32 max_tab_dim = gui_scale_val(gui, GUI_PANEL_MAX_TAB_WIDTH);
@@ -8337,7 +8341,7 @@ void pgui__panel_titlebar(gui_t *gui, gui_panel_t *panel, b32 *dragging)
 		}
 		gui_style_pop(gui);
 	} else {
-		gui_txt_styled(gui, panel->x, y, panel->w, dim,
+		gui_txt_styled(gui, panel->x + dim, y, panel->w, dim,
 		               panel->title, &gui->style.panel.titlebar.text);
 	}
 
@@ -8613,30 +8617,19 @@ void pgui_panel_restore(gui_panel_t *panel)
 		panel->collapsed = !panel->collapsed;
 }
 
-void pgui__panel_recenter(gui_t *gui, gui_panel_t *panel)
-{
-	assert(panel->flags & GUI_PANEL_DRAGGABLE);
-	v2i win_dim;
-	s32 x, y;
-	gui_dim(gui, &win_dim.x, &win_dim.y);
-	x = win_dim.x / 2 - panel->unscaled.w / 2;
-	y = win_dim.y / 2 - panel->unscaled.h / 2;
-	pgui__panel_set_size(gui, panel, x, y, panel->unscaled.w, panel->unscaled.h);
-}
-
 void pgui_panel_open(gui_t *gui, gui_panel_t *panel)
 {
 	assert(panel->closed);
 	panel->closed = false;
-	if (panel->flags & GUI_PANEL_DRAGGABLE)
-		pgui__panel_recenter(gui, panel);
 	pgui_panel_to_front(gui, panel);
 }
 
 void pgui_panel_open_if_closed(gui_t *gui, gui_panel_t *panel)
 {
-	if (panel->closed)
-		pgui_panel_open(gui, panel);
+	if (panel->closed) {
+		panel->closed = false;
+		pgui_panel_to_front(gui, panel);
+	}
 }
 
 void pgui_panel_close(gui_t *gui, gui_panel_t *panel)
@@ -8934,6 +8927,10 @@ void gui__style_stack_push_item(gui_t *gui, gui__style_stack_item_t item)
 	gui->style_stack_sz += sizeof(item);
 }
 
+u32 gui_style_stack_sz(gui_t *gui) {
+	return gui->style_stack_sz;
+}
+
 void gui_style_push_(gui_t *gui, const void *value, size_t offset, size_t size)
 {
 	const gui__style_stack_item_t item = { .offset = offset, .size = size };
@@ -8967,7 +8964,8 @@ void gui_style_pop(gui_t *gui)
 		loc = gui__style_stack_item_location(gui, item);
 		memcpy(loc, &gui->style_stack[gui->style_stack_sz], item.size);
 	} else {
-		assert(false);
+		// @ff: commented, generated error on starting 4 step of tutorial
+		// assert(false);
 		gui->style_stack_sz = 0;
 	}
 }
