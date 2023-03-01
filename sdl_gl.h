@@ -2042,8 +2042,7 @@ void window_end_frame_ex(window_t *window, u32 target_frame_milli,
 	window_end_frame(window);
 	frame_milli = timepoint_diff_milli(gui_frame_start(gui), timepoint_create());
 
-	if (target_frame_milli && frame_milli > target_frame_milli)
-	else if (  timepoint_diff_milli(gui_last_input_time(gui), gui_frame_start(gui))
+	if (  timepoint_diff_milli(gui_last_input_time(gui), gui_frame_start(gui))
 	         > idle_start_milli) {
 		SDL_WaitEventTimeout(NULL, idle_frame_milli - frame_milli);
 	}
