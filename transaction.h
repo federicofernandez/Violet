@@ -21,7 +21,9 @@ typedef struct transaction_system {
 	transaction_logger_t *logger; /* NULLable, unowned */
 } transaction_system_t;
 
-transaction_system_t transaction_system_create(transaction_logger_t *logger, allocator_t *alc);
+transaction_system_t* transaction_system_create(transaction_logger_t *logger, allocator_t *alc);
+void log_transaction_info(char* c);
+void reset_transacition_active();
 void transaction_system_reset(transaction_system_t *sys);
 void transaction_system_destroy(transaction_system_t *sys);
 void transaction_system_set_active(transaction_system_t *sys);
@@ -61,6 +63,7 @@ extern void event_undo_redo__create(void *instance, allocator_t *alc);
 #ifdef TRANSACTION_IMPLEMENTATION
 
 transaction_system_t *g_active_transaction_system = NULL;
+allocator_t * tr_g_allocator = NULL;
 
 static
 u32 transaction__handle_ordinary_event(transaction_system_t *sys, event_t *event);
@@ -82,19 +85,18 @@ void *store_data(u32 kind)
 	return store->instance;
 }
 
-transaction_system_t transaction_system_create(transaction_logger_t *logger, allocator_t *alc)
+transaction_system_t* transaction_system_create(transaction_logger_t *logger, allocator_t *alc)
 {
-	log_warn("Calling transaction_system_create");
-	return (transaction_system_t) {
-		.alc = alc,
-		.stores          = array_create_ex(alc),
-		.event_history   = array_create_ex(alc),
-		.last_event_desc = str_create(alc),
-		.temp_secondary_events = array_create_ex(alc),
-		.undoing = false,
-		.active_parent = NULL,
-		.logger = logger,
-	};
+	transaction_system_t* sys = (transaction_system_t*)malloc(sizeof(transaction_system_t));
+	sys -> alc = alc;
+	sys -> stores          = array_create_ex(alc);
+	sys -> event_history   = array_create_ex(alc);
+	sys -> last_event_desc = str_create(alc);
+	sys -> temp_secondary_events = array_create_ex(alc);
+	sys -> undoing = false;
+	sys -> active_parent = NULL;
+	sys -> logger = logger;
+	return sys;
 }
 
 /* store data is NOT reset */
@@ -128,9 +130,15 @@ void transaction_system_destroy(transaction_system_t *sys)
 	str_destroy(&sys->last_event_desc);
 }
 
+void reset_transacition_active() {
+	g_active_transaction_system -> alc = tr_g_allocator;
+}
+
 void transaction_system_set_active(transaction_system_t *sys)
 {
 	g_active_transaction_system = sys;
+	// @ff: just a debug instruction, to keep track of first pointer direction
+	tr_g_allocator = sys -> alc;
 }
 
 static
@@ -436,10 +444,14 @@ void transaction_spawn_store(const store_metadata_t *meta, u32 kind)
 	array_append(sys->stores, store);
 }
 
+void log_transaction_info(char* token) {
+	transaction_system_t *sys = g_active_transaction_system;
+	log_warn("%s :: sys: %p. alc: %p. g_alc: %p. eh: %p", token, sys, sys-> alc, tr_g_allocator, sys -> event_history);
+}
 void *transaction_spawn_event(const event_metadata_t *meta, const char *nav_description, u32 kind)
 {
 	transaction_system_t *sys = g_active_transaction_system;
-	event_t *event = event_create(kind, meta, nav_description, sys->alc);
+	event_t *event = event_create(kind, meta, nav_description, tr_g_allocator);
 	return event->instance;
 }
 

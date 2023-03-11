@@ -151,7 +151,7 @@ event_t *event_create(u32 kind, const event_metadata_t *meta,
 event_t *event_create_empty(u32 kind, const event_metadata_t *meta,
                             const char *nav_description, allocator_t *alc)
 {
-	event_t *event = acalloc(1, sizeof(event_t) + meta->size, alc);
+	event_t *event = calloc(1, sizeof(event_t) + meta->size);
 	event->kind = kind;
 	event->meta = meta;
 	if (nav_description)
